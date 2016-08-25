@@ -410,13 +410,14 @@ which.min(error)  # min error for boosting model 0.1095
 
 
 # predictions on test data set
-# select model.log2 since it has maximum profit in the validation sample
+# predictions on test data set
 
-post.test <- predict(model.log2, data.test.std, type="response") # post probs for test data
+# select boost.model since it has maximum profit in the validation sample
+post.test <- predict(boost.model, data.test.std, type="response",n.trees = 5000) # post probs for test data
 
 # Oversampling adjustment for calculating number of mailings for test set
 
-n.mail.valid <- which.max(profit.log2)
+n.mail.valid <- which.max(profit.boost)
 tr.rate <- .1 # typical response rate is .1
 vr.rate <- .5 # whereas validation response rate is .5
 adj.test.1 <- (n.mail.valid/n.valid.c)/(vr.rate/tr.rate) # adjustment for mail yes
@@ -426,4 +427,4 @@ n.mail.test <- round(n.test*adj.test, 0) # calculate number of mailings for test
 
 cutoff.test <- sort(post.test, decreasing=T)[n.mail.test+1] # set cutoff based on n.mail.test
 chat.test <- ifelse(post.test>cutoff.test, 1, 0) # mail to everyone above the cutoff
-table(chat.test) #367 mailings to be sent to potential donors with test set
+table(chat.test) #301 mailings to be sent to potential donors with test set
