@@ -415,7 +415,7 @@ which.min(error)  # min error for boosting model 0.1095
 # select boost.model since it has maximum profit in the validation sample
 post.test <- predict(boost.model, data.test.std, type="response",n.trees = 5000) # post probs for test data
 
-# Oversampling adjustment for calculating number of mailings for test sets
+# Oversampling adjustment for calculating number of mailings for test set
 
 n.mail.valid <- which.max(profit.boost)
 tr.rate <- .1 # typical response rate is .1
