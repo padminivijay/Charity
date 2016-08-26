@@ -415,7 +415,7 @@ which.min(error)  # min error for boosting model 0.1095
 # select boost.model since it has maximum profit in the validation sample
 post.test <- predict(boost.model, data.test.std, type="response",n.trees = 5000) # post probs for test data
 
-# Oversampling adjustment for calculating number of mailings for test set
+# Oversampling adjustment for calculating number of mailings for test sets
 
 n.mail.valid <- which.max(profit.boost)
 tr.rate <- .1 # typical response rate is .1
@@ -428,3 +428,246 @@ n.mail.test <- round(n.test*adj.test, 0) # calculate number of mailings for test
 cutoff.test <- sort(post.test, decreasing=T)[n.mail.test+1] # set cutoff based on n.mail.test
 chat.test <- ifelse(post.test>cutoff.test, 1, 0) # mail to everyone above the cutoff
 table(chat.test) #301 mailings to be sent to potential donors with test set
+
+#Prediction models to predict donation amount
+
+#OLS Regression
+
+model.ls1 <- lm(damt ~ .,data.train.std.y)
+summary(model.ols) #Adj R2 0.6355
+
+#least squares with just the significant variables
+model.ls2 <- lm(damt ~ . -reg1 -avhv -wrat -inca -npro -tlag,data.train.std.y)
+summary(model.ls2) #Adj R2 0.6361
+
+pred.valid.ls2 = predict(model.ls2, newdata = data.valid.std.y) # validation predictions
+model.ls2.mse = mean((y.valid - pred.valid.ls2)^2) # mean prediction error - 1.558577
+model.ls2.se = sd((y.valid - pred.valid.ls2)^2)/sqrt(n.valid.y) # std error - 0.1606044
+
+
+#### best subsets
+library(leaps)
+model.bss <- regsubsets(damt ~ ., data.train.std.y, nvmax = 20)
+model.bss.summmary = summary(model.bss)
+names(model.bss.summmary)
+model.bss.summmary$rsq
+model.bss.summmary$adjr2
+which.max(model.bss.summmary$adjr2) #15
+which.min(model.bss.summmary$cp) #14
+which.min(model.bss.summmary$bic) #11
+plot(model.bss, scale = "Cp")
+plot(model.bss, scale = "bic")
+plot(model.bss, scale = "adjr2")
+
+#choosing model with lowest bic
+coef(model.bss,11)
+model.ls3 = lm(damt~ reg3 + reg4 + home + 
+                     chld + hinc + incm + plow + tgif + lgif + 
+                     rgif + agif, data.train.std.y)
+summary(model.ls3)
+#prediction on validation set
+pred.valid.ls3 = predict(model.ls3, newdata = data.valid.std.y) # validation predictions
+model.ls3.mse = mean((y.valid - pred.valid.ls3)^2) # mean prediction error - 1.56297
+model.ls3.se = sd((y.valid - pred.valid.ls3)^2)/sqrt(n.valid.y) # std error - 0.1604673
+
+####best subset with k fold cross validation
+predict.regsubsets=function(object,newdata,id,...){
+  form=as.formula(object$call[[2]])
+  mat=model.matrix(form,newdata)
+  coefi=coef(object,id=id)
+  xvars=names(coefi)
+  mat[,xvars]%*%coefi
+}
+
+model.bss.cv1=regsubsets(damt~.,data=data.train.std.y,nvmax=20)
+
+k=10
+set.seed(1)
+folds=sample(1:k,nrow(data.train.std.y),replace=TRUE)
+cv.errors=matrix(NA,k,20, dimnames=list(NULL, paste(1:20)))
+for(j in 1:k){
+  best.fit=regsubsets(damt~.,data=data.train.std.y[folds!=j,],nvmax=20)
+  for(i in 1:20){
+    pred=predict(best.fit,data.train.std.y[folds==j,],id=i)
+    cv.errors[j,i]=mean( (data.train.std.y$damt[folds==j]-pred)^2)
+  }
+}
+mean.cv.errors=apply(cv.errors,2,mean)
+mean.cv.errors
+par(mfrow=c(1,1))
+plot(mean.cv.errors,type='b')
+which.min(mean.cv.errors) #we chose 14 variable model
+coef(model.bss.cv1,14)
+
+model.bss.bestfit = lm(damt~ reg2 + reg3 + reg4 +home + 
+                 chld +genf + incm + plow + tgif + lgif + 
+                 rgif + tdon + agif, data.train.std.y)
+summary(model.bss.bestfit)
+
+pred.valid.bss.bestfit = predict(model.bss.bestfit, newdata = data.valid.std.y) # validation predictions
+model.bss.bestfit.mse = mean((y.valid - pred.valid.bss.bestfit)^2) # mean prediction error - 1.695026
+model.bss.bestfit.mse
+model.bss.bestfit.se = sd((y.valid - pred.valid.bss.bestfit)^2)/sqrt(n.valid.y) # std error - 0.1639072
+model.bss.bestfit.se
+
+### Ridge Regression
+library(glmnet)
+set.seed(1)
+grid = 10^seq(10, -2, length=100)
+data.train.std.y.mat <- data.matrix(data.train.std.y)
+data.train.std.y.mat <- data.train.std.y.mat[,-21]
+ridge.model = glmnet(data.train.std.y.mat, y.train, alpha=0, lambda=grid, thresh=1e-12)
+
+# choose lambda with cross validation
+set.seed(1)
+ridge.cv = cv.glmnet(data.train.std.y.mat, y.train, alpha=0)
+plot(ridge.cv)
+bestlam = ridge.cv$lambda.min
+bestlam #0.1252296
+
+#predict on validation set
+data.valid.std.y.mat <- data.matrix(data.valid.std.y)
+data.valid.std.y.mat <- data.valid.std.y.mat[,-21]
+set.seed(1)
+ridge.pred = predict(ridge.model, s=bestlam, newx=data.valid.std.y.mat)
+ridge.mse  <- mean((y.valid - ridge.pred)^2)
+ridge.mse #1.572113
+ridge.se <- sd((y.valid - ridge.pred)^2)/sqrt(n.valid.y)	
+ridge.se  #0.1627705
+
+
+### Lasso Regression
+library(glmnet)
+set.seed(1)
+lasso.model = glmnet(data.train.std.y.mat, y.train, alpha=1, lambda=grid, thresh=1e-12)
+
+# choose lambda with cross validation
+set.seed(1)
+lasso.cv = cv.glmnet(data.train.std.y.mat, y.train, alpha=1)
+plot(lasso.cv)
+bestlam = lasso.cv$lambda.min
+bestlam #0.00684039
+
+#predict on validation set
+set.seed(1)
+lasso.pred = predict(lasso.model, s=bestlam, newx=data.valid.std.y.mat)
+lasso.mse  <- mean((y.valid - lasso.pred)^2)
+lasso.mse #1.562053
+lasso.se <- sd((y.valid - lasso.pred)^2)/sqrt(n.valid.y)	
+lasso.se  #0.1611437
+
+
+
+
+### Decision Tree
+library(tree)
+tree.model = tree(damt~.,data.train.std.y)
+plot(tree.model)
+text(tree.model, pretty=0)
+
+#cross validation and pruning
+tree.cv.model <- cv.tree(tree.model)
+plot(tree.cv.model$size, tree.cv.model$dev, type = "b")
+plot(tree.cv.model$k, tree.cv.model$dev, type = "b")
+
+#tree with 11 nodes has lowest misclassification error.
+#significant reduction in error seen with 7 nodes
+
+#prune to 7 nodes
+
+tree.prune.model1 = prune.tree(tree.model, best=7)
+tree.pred.model1 = predict(tree.prune.model1, data.valid.std.y)
+tree.mse.7nodes = mean((y.valid-tree.pred.model1)^2)
+tree.mse.7nodes #2.378834
+tree.se.7nodes = sd((y.valid - tree.pred.model1)^2)/sqrt(n.valid.y)
+tree.se.7nodes #0.1868944
+
+
+tree.prune.model2 = prune.tree(tree.model, best=11)
+tree.pred.model2 = predict(tree.prune.model2, data.valid.std.y)
+tree.mse.11nodes = mean((y.valid-tree.pred.model2)^2)
+tree.mse.11nodes #2.241075
+tree.se.11nodes = sd((y.valid - tree.pred.model2)^2)/sqrt(n.valid.y)
+tree.se.11nodes #0.1920681
+
+##### bagging
+library(randomForest)
+set.seed(1) # For reproducible results
+bagging.model = randomForest(damt~., data=data.train.std.y, mtry=20, importance=TRUE)
+importance(bagging.model)
+
+set.seed(1)
+bagging.pred.model = predict(bagging.model, newdata=data.valid.std.y)
+bagging.mse <- mean((y.valid - bagging.pred.model)^2)
+bagging.mse #1.704608
+bagging.se <- sd((y.valid - bagging.pred.model)^2/sqrt(n.valid.y))
+bagging.se  #0.1744314
+
+
+
+##### random forest
+library(randomForest)
+set.seed(1) # For reproducible results
+randomforest.model = randomForest(damt~., data=data.train.std.y, mtry=5, importance=TRUE)
+importance(randomforest.model)
+
+set.seed(1)
+randomforest.pred.model = predict(randomforest.model, newdata=data.valid.std.y)
+randomforest.mse <- mean((y.valid - randomforest.pred.model)^2)
+randomforest.mse #1.654512
+randomforest.se <- sd((y.valid - randomforest.pred.model)^2/sqrt(n.valid.y))
+randomforest.se  #0.1720678
+
+
+### Boosting
+library(gbm)
+set.seed(1)
+boost.model = gbm(damt ~ . , data = data.train.std.y, 
+                  distribution = "gaussian", n.trees = 5000, interaction.depth = 4)
+#rgif, lgif, agif and reg4 are most importart variables
+summary(boost.model)
+
+set.seed(1)
+boost.pred = predict.gbm(boost.model, newdata = data.valid.std.y,n.trees = 5000, type = "response")
+boost.mse <- mean((y.valid - boost.pred)^2)
+boost.mse #1.539644
+boost.se <- sd((y.valid - boost.pred)^2)/sqrt(n.valid.y)
+boost.se # 0.1668573
+
+
+#trying variables from OLS model
+set.seed(1)
+boost.model2 = gbm(damt~ reg3 + reg4 + home + 
+                     chld + hinc + incm + plow + tgif + lgif + 
+                     rgif + agif , data = data.train.std.y, 
+                  distribution = "gaussian", n.trees = 5000, interaction.depth = 4)
+#rgif, lgif, agif , reg4 and chld are most importart variables
+summary(boost.model2)
+
+set.seed(1)
+boost.pred2 = predict.gbm(boost.model2, newdata = data.valid.std.y,n.trees = 5000, type = "response")
+boost.mse2 <- mean((y.valid - boost.pred2)^2)
+boost.mse2 #1.645761
+boost.se2 <- sd((y.valid - boost.pred2)^2)/sqrt(n.valid.y)
+boost.se2  #0.1707394
+
+
+### Principal Components 
+#TODO
+
+### Partial Least Squares
+#TODO
+
+# View Error table for best models.
+reg.model = c("OLS", "BestSubsets", "BestSubsetsCV", "Ridge", "Lasso", 
+              "Decision Tree", "Bagging", "Random Forest", "Boosting")
+
+reg.mse <- c( round(model.ls2.mse,4), round(model.ls3.mse,4), round(model.bss.bestfit.mse,4),
+			round(ridge.mse,4), round(lasso.mse,4), round(tree.mse.11nodes,4),round(bagging.mse,4)
+			,round(randomforest.mse,4), round(boost.mse,4))
+reg.sd <- c( round(model.ls2.se,4), round(model.ls3.se,4), round(model.bss.bestfit.se,4), 
+			round(ridge.se,4), round(lasso.se,4),round(tree.se.11nodes),round(bagging.se,4),round(bagging.se,4),round(boost.se,4))
+
+reg.errtbl <- as.data.frame(cbind(reg.model, reg.mse, reg.sd))
+reg.errtbl
+which.min(reg.mse)  # 
