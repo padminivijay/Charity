@@ -39,8 +39,35 @@ pairs(damt~tdon+tlag+agif+npro+tgif+lgif,data=charity[charity$part=="train",])
 #correlation
 cor(charity[charity$part=="train",c(11:21,23)])
 
+
 #predictor transformations
 charity.t <- charity
+
+#Outliers
+
+
+trim_outliers <- function(x, na.rm = TRUE, ...) {
+  qnt <- quantile(x, probs=c(.25, .75), na.rm = na.rm, ...)
+  H <- 1.5 * IQR(x, na.rm = na.rm)
+  max = qnt[2]+H
+  min = qnt[2]-H
+  x[x>max] = max
+  x[x<min] = min
+  x
+  }
+
+for( p in c("avhv","incm","inca","plow", "npro", "tgif","lgif","rgif","agif")){
+  par(mfrow=c(1,2))
+  boxplot(charity[[p]],main = paste("BoxPlot of " , p),xlab = p)
+  charity[[p]] = trim_outliers(charity[[p]])
+  boxplot(charity[[p]],main = paste("BoxPlot of truncated " , p),xlab = p)
+  readline()
+  par(mfrow=c(1,1))
+}
+
+# Log transformation of predictors
+
+par ( mfrow =c(7 ,2) )
 for( p in c("avhv","incm","inca","tgif","lgif","rgif","agif")){
   charity.t[[p]] <- log(charity.t[[p]])
   par(mfrow=c(1,2))
@@ -48,7 +75,7 @@ for( p in c("avhv","incm","inca","tgif","lgif","rgif","agif")){
   hist(charity.t[[p]],main = paste("Histogram of log" , p),xlab = p)
   par(mfrow=c(1,1))
 }
-
+par ( mfrow =c(1 ,1) )
 #charity.t$avhv <- log(charity.t$avhv)
 #charity.t$tgif = log(charity.t$tgif)
 #charity.t$lgif = log(charity.t$lgif)
@@ -114,9 +141,9 @@ model.log1 <- glm(donr ~ reg1 + reg2 + reg3 + reg4 + home + chld + hinc
 summary(model.log1)
 
 #Include only variable found significant in model.log1
-#AIC AIC: 2170.8
+#AIC AIC: 2169.5
 model.log2 <- glm(donr ~ reg1 + reg2 + home + chld  
-                  + I(hinc^2) + wrat  + incm + plow + tgif 
+                  + I(hinc^2) + wrat  + incm  + tgif 
                   + tdon + tlag , data.train.std.c, family=binomial("logit"))
 summary(model.log2)
 
@@ -126,7 +153,7 @@ glm.pred.log2 = rep("0" ,2018)
 glm.pred.log2[glm.probs.log2 > .5] = "1"
 table(glm.pred.log2,c.valid)
 glm.err.log2 = mean(glm.pred.log2 != c.valid)
-glm.err.log2 #0.1199207
+glm.err.log2 #0.1179386
 
 # calculate ordered profit function using average donation = $14.50 and mailing cost = $2
 
@@ -136,15 +163,16 @@ plot(profit.log2, main = "Maximum Profit - Logistic")
 # number of mailings that maximizes profits
 n.mail.log2 <- which.max(profit.log2) 
 # report number of mailings and maximum profit
-c(n.mail.log2, max(profit.log2)) # 1348 11630
+c(n.mail.log2, max(profit.log2)) #  1354.0 11632.5
 
 #cutoffs and check optimized mailing for max profit
 cutoff.log2 <- sort(glm.probs.log2, decreasing=T)[n.mail.log2+1] # set cutoff based on number of mailings for max profit
 chat.log2 <- ifelse(glm.probs.log2  > cutoff.log2, 1, 0) # mail to everyone above the cutoff
 table(chat.log2, c.valid) # classification table
-# correct predictions - 659+988/2018
-log.donors = 360+988 #1348
-log.profit = 988*14.5 - 2*1348 #11630
+# correct predictions - 654+989/2018
+log.donors = 365+989 #1354
+log.profit = 989*14.5 - 2*1354 #11632.5
+
 
 #######Logistic GAM
 library(gam)
@@ -158,7 +186,7 @@ summary(gam.model1)
 #using signficant variables from gam.model1 and smoothing splines
 #AIC 2818.673
 gam.model2 <- gam(I(donr == 1) ~  reg2 + home
-                  + chld  + wrat + s(avhv,df=4) + s(incm,df=4)  + s(plow,df=4) + s(npro, df=4)
+                  + chld  + wrat + s(avhv,df=4) + s(incm,df=4)  + s(npro, df=4)
                   + s(tgif,df=4)  + s(tdon, df=4) + s(tlag,df=4) , family = binomial,
                   data = data.train.std.c)
 summary(gam.model2)
@@ -169,7 +197,7 @@ gam.pred.model2 <- rep("0", 2018)
 gam.pred.model2[ gam.probs.model2 > .5] = "1"
 table(gam.pred.model2, c.valid)
 gam.err.model2 <- mean(gam.pred.model2 != c.valid)
-gam.err.model2 #0.1635282
+gam.err.model2 #0.1645193
 
 # calculate ordered profit function using average donation = $14.50 and mailing cost = $2
 
@@ -179,15 +207,16 @@ plot(profit.gam2, main = "Maximum Profit - GAM")
 # number of mailings that maximizes profits
 n.mail.gam2 <- which.max(profit.gam2) 
 # report number of mailings and maximum profit
-c(n.mail.gam2, max(profit.gam2)) # 1489.0 11420.5
+c(n.mail.gam2, max(profit.gam2)) # 1455.0 11430.5
+
 
 #cutoffs and check optimized mailing for max profit
 cutoff.gam2 <- sort(gam.probs.model2, decreasing=T)[n.mail.gam2+1] # set cutoff based on number of mailings for max profit
 chat.gam2 <- ifelse(gam.probs.model2  > cutoff.gam2, 1, 0) # mail to everyone above the cutoff
 table(chat.gam2, c.valid) # classification table
 #correct predictions 523+993/2018
-gam.donors = 496+993 # 1489
-gam.profit = 14.5*993 - 2*1489 #11420.5
+gam.donors = 466+989 # 1455
+gam.profit = 14.5*989 - 2*1455 #11430.5
 
 #LDA
 
@@ -197,24 +226,24 @@ lda.model1 <- lda(donr ~ reg1 + reg2 + reg3 + reg4 + home + chld + hinc + I(hinc
                     avhv + incm + inca + plow + npro + tgif + lgif + rgif + tdon + tlag + agif, 
                   data.train.std.c) 
 lda.model1
-
+plot(lda.model1)
 lda.pred.model1 = predict(lda.model1, data.valid.std.c)
 table(lda.pred.model1$class,c.valid)
 lda.err.model1 = mean(lda.pred.model1$class != c.valid) #0.1313181
 lda.err.model1 #0.1313181
 
 lda.pred.model1.posterior <- lda.pred.model1$posterior[,2]
-lda.pred.model1.posterior
+
 
 #LDA with significant variables 
-lda.model2 <- lda(donr ~ reg1 + reg2 + home + chld + I(hinc^2) + wrat  + incm + plow + tgif 
+lda.model2 <- lda(donr ~ reg1 + reg2 + home + chld + I(hinc^2) + wrat  + incm  + tgif 
                   + tdon + tlag , data.train.std.c)
 lda.model2
-
+plot(lda.model2)
 lda.pred.model2 = predict(lda.model2, data.valid.std.c)
 table(lda.pred.model2$class,c.valid)
 lda.err.model2 = mean(lda.pred.model2$class != c.valid) 
-lda.err.model2 #0.1323092
+lda.err.model2 #0.1318137
 
 # calculate ordered profit function using average donation = $14.50 and mailing cost = $2
 profit.lda2 <- cumsum(14.5*c.valid[order(lda.pred.model2$posterior[,2] , decreasing=T)]-2)
@@ -223,15 +252,15 @@ plot(profit.lda2, main = "Maximum Profit - LDA")
 # number of mailings that maximizes profits
 n.mail.lda2 <- which.max(profit.lda2 ) 
 # report number of mailings and maximum profit
-c(n.mail.lda2, max(profit.lda2)) # 1406 11601
+c(n.mail.lda2, max(profit.lda2)) # 1405 11603
 
 #cutoffs
 cutoff.lda2 <- sort(lda.pred.model2$posterior[,2], decreasing=T)[n.mail.lda2+1] # set cutoff based on number of mailings for max profit
 chat.lda2 <- ifelse(lda.pred.model2$posterior[,2]  > cutoff.lda2, 1, 0) # mail to everyone above the cutoff
 table(chat.lda2, c.valid) # classification table
-#correct predictions 607+994/2018
-lda.donors = 412+994 # 1406
-lda.profit = 994*14.5-2*1406 # 11601
+#correct predictions 608+994/2018
+lda.donors = 411+994 # 1406
+lda.profit = 994*14.5-2*1405 # 11603
 
 #QDA
 
@@ -242,6 +271,7 @@ qda.model1 <- qda(donr ~ reg1 + reg2 + reg3 + reg4 + home + chld + hinc + I(hinc
                   data.train.std.c) 
 qda.model1
 
+
 qda.pred.model1 = predict(qda.model1, data.valid.std.c)
 table(qda.pred.model1$class,c.valid)
 qda.err.model1 = mean(qda.pred.model1$class != c.valid)
@@ -251,14 +281,15 @@ qda.pred.model1.posterior <- qda.pred.model1$posterior[,2]
 
 
 #QDA with significant variables 
-qda.model2 <- qda(donr ~ reg1 + reg2 + home + chld + I(hinc^2) + wrat  + incm + plow + tgif 
+qda.model2 <- qda(donr ~ reg1 + reg2 + home + chld + I(hinc^2) + wrat  + incm  + tgif 
                   + tdon + tlag , data.train.std.c)
 qda.model2
 
 qda.pred.model2 = predict(qda.model2, data.valid.std.c)
 table(qda.pred.model2$class,c.valid)
 qda.err.model2 = mean(qda.pred.model2$class != c.valid) #0.4340932
-qda.err.model2 # 0.1590684
+qda.err.model2 # 0.1600595
+
 
 # calculate ordered profit function using average donation = $14.50 and mailing cost = $2
 profit.qda2 <- cumsum(14.5*c.valid[order(qda.pred.model2$posterior[,2] , decreasing=T)]-2)
@@ -267,15 +298,15 @@ plot(profit.qda2, main = "Maximum Profit - QDA")
 # number of mailings that maximizes profits
 n.mail.qda2 <- which.max(profit.qda2 ) 
 # report number of mailings and maximum profit
-c(n.mail.qda2, max(profit.qda2)) # 1402.0 11275.5
+c(n.mail.qda2, max(profit.qda2)) # 1409 11276
 
 #cutoffs
 cutoff.qda2 <- sort(qda.pred.model2$posterior[,2], decreasing=T)[n.mail.qda2+1] # set cutoff based on number of mailings for max profit
 chat.qda2 <- ifelse(qda.pred.model2$posterior[,2]  > cutoff.qda2, 1, 0) # mail to everyone above the cutoff
 table(chat.qda2, c.valid) # classification table
-#correct predictions 588+971/2018
-qda.donors = 431+971 #1402
-qda.profit = 14.5*971-2*1402 # 11275.5
+#correct predictions 582+972/2018
+qda.donors = 437+972 #1409
+qda.profit = 14.5*972-2*1409 # 11276
 
 #KNN
 # k = 3
@@ -295,16 +326,20 @@ knn.err.model2 = mean(knn.pred.model2 != c.valid)
 knn.err.model2 # 0.3280476
 knn.donors = 443+780 # 1223
 knn.profit = 14.5*780-2*1223 #8864
-
+	
 
 #### decision tree
 library(tree)
 tree.model = tree(donr~.,data.train.std.c)
+summary(tree.model)
 plot(tree.model)
 text(tree.model, pretty=0)
+tree.model
+
 
 #cross validation and pruning
 tree.cv.model <- cv.tree(tree.model, FUN=prune.misclass)
+tree.cv.model
 plot(tree.cv.model$size, tree.cv.model$dev, type = "b")
 plot(tree.cv.model$k, tree.cv.model$dev, type = "b")
 
@@ -327,6 +362,8 @@ tree.err.model2 # 0.1516353
 tree.donors = 236+929 # 1165
 tree.profit = 14.5*929-2*1165 #11140.5
 
+
+
 ##### bagging
 library(randomForest)
 set.seed(1) # For reproducible results
@@ -341,7 +378,9 @@ table(bagging.pred.model, c.valid)
 bagging.err.model = mean(bagging.pred.model != c.valid)
 bagging.err.model #0.1114965
 bagging.donors = 130+904 #1034
+bagging.donors
 bagging.profit = 14.5*904-2*1034 #11040
+bagging.profit
 
 ##### random forest
 library(randomForest)
@@ -349,6 +388,8 @@ set.seed(1) # For reproducible results
 randomforest.model = randomForest(donr~., data=data.train.std.c, mtry=5, 
             importance=TRUE, type="classification")
 importance(randomforest.model)
+randomforest.model
+varImpPlot (randomforest.model)
 
 set.seed(1)
 randomforest.pred.model = predict(randomforest.model, newdata=data.valid.std.c)
@@ -369,6 +410,9 @@ boost.model = gbm(donr ~ reg1 + reg2 + home + chld
                   distribution = "bernoulli", n.trees = 5000, interaction.depth = 4)
 #chld, hinc^2, reg2 and home are most importart variables
 summary(boost.model)
+par ( mfrow =c(1 ,2) )
+plot( boost.model ,i="chld")
+plot( boost.model ,i="I(hinc^2)")
 
 set.seed(1)
 boost.prob.model = predict.gbm(boost.model, newdata = data.valid,n.trees = 5000, type = "response")
@@ -424,7 +468,7 @@ adj.test.1 <- (n.mail.valid/n.valid.c)/(vr.rate/tr.rate) # adjustment for mail y
 adj.test.0 <- ((n.valid.c-n.mail.valid)/n.valid.c)/((1-vr.rate)/(1-tr.rate)) # adjustment for mail no
 adj.test <- adj.test.1/(adj.test.1+adj.test.0) # scale into a proportion
 n.mail.test <- round(n.test*adj.test, 0) # calculate number of mailings for test set
-
+n.mail.test
 cutoff.test <- sort(post.test, decreasing=T)[n.mail.test+1] # set cutoff based on n.mail.test
 chat.test <- ifelse(post.test>cutoff.test, 1, 0) # mail to everyone above the cutoff
 table(chat.test) #301 mailings to be sent to potential donors with test set
